@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { GraduationCap, AlertCircle, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
 const SITEVERIFY_WORKER_URL = "https://turnstile-siteverify-liceocares.harleybusa82.workers.dev";
 
 const StudentLogin = () => {

@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
 import { Mail, Lock, LogIn, AlertCircle, ShieldCheck } from "lucide-react";
 
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
 const SITEVERIFY_WORKER_URL = "https://turnstile-siteverify-liceocares.harleybusa82.workers.dev";
 
 const Login = () => {
