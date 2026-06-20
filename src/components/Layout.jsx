@@ -192,7 +192,7 @@ const Layout = ({ children }) => {
           <div className="flex justify-between items-center h-16">
             {/* Logo - always on left */}
             <Link to="/" className="flex items-center space-x-2 sm:space-x-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-white p-0.5">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0">
                 <img src="/ldcu.ico" alt="LDCU Logo" className="w-full h-full object-contain" />
               </div>
               <div>
@@ -524,7 +524,7 @@ const Layout = ({ children }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-white p-0.5">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center">
                 <img src="/ldcu.ico" alt="LDCU Logo" className="w-full h-full object-contain" />
               </div>
               <div>
