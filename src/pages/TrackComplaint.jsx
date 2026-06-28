@@ -21,6 +21,7 @@ import {
   Send,
   Eye,
   EyeOff,
+  Image,
 } from "lucide-react";
 
 const TrackComplaint = () => {
@@ -555,6 +556,34 @@ const TrackComplaint = () => {
                   </div>
                 </div>
               </div>
+
+              {complaint.attachment_url && (
+                <div className="border-t border-gray-100 pt-4 mt-4">
+                  <div className="flex items-start space-x-3">
+                    <Image size={20} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 w-full overflow-hidden">
+                      <p className="text-sm text-gray-500 mb-2">Attachments</p>
+                      <div className="flex flex-wrap gap-2">
+                        {complaint.attachment_url.split(',').map((url, i) => {
+                          const isImage = url.match(/\.(jpeg|jpg|gif|png|webp)(\?.*)?$/i);
+                          return (
+                            <a
+                              key={i}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-2 px-4 py-2 bg-maroon-800 text-white rounded-lg hover:bg-maroon-700 transition-colors shadow-sm font-medium text-sm"
+                            >
+                              {isImage ? <Image size={16} /> : <FileText size={16} />}
+                              <span>View Attachment {i + 1}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {complaint.resolution_details && (
                 <div className="border-t border-gray-100 pt-4 mt-4">

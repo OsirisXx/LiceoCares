@@ -154,21 +154,37 @@ const Home = () => {
 
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
-    const validImages = [];
+    
+    // Calculate current total size
+    const currentSize = images.reduce((sum, file) => sum + file.size, 0);
+    let newSize = 0;
+    
+    const validFiles = [];
 
     for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError("Each file must be less than 5MB");
+      const allowedTypes = ['image/', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      const allowedExtensions = ['.pdf', '.doc', '.docx'];
+      const fileName = file.name.toLowerCase();
+      
+      const isAllowedType = 
+        allowedTypes.some(type => file.type && file.type.startsWith(type)) || 
+        allowedExtensions.some(ext => fileName.endsWith(ext));
+      
+      if (!isAllowedType) {
+        setError("Please upload only images, PDF, or Word documents");
         continue;
       }
-      if (!file.type.startsWith("image/")) {
-        setError("Please upload only image files");
-        continue;
+      
+      if (currentSize + newSize + file.size > 5 * 1024 * 1024) {
+        setError("Total upload size cannot exceed 5MB");
+        break;
       }
-      validImages.push(file);
+      
+      newSize += file.size;
+      validFiles.push(file);
     }
 
-    setImages((prev) => [...prev, ...validImages]);
+    setImages((prev) => [...prev, ...validFiles]);
     e.target.value = "";
   };
 
@@ -414,12 +430,19 @@ const Home = () => {
           .from("attachments")
           .upload(fileName, file);
 
-        if (!uploadError) {
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from("attachments").getPublicUrl(fileName);
-          uploadedUrls.push(publicUrl);
+        if (uploadError) {
+          console.error("Upload error details:", uploadError);
+          // If the error is about MIME types, it means Supabase bucket needs configuration
+          if (uploadError.message && uploadError.message.toLowerCase().includes("mime type")) {
+             throw new Error(`Upload failed for "${file.name}". The Supabase "attachments" bucket is misconfigured and rejects documents. An administrator must go to Supabase -> Storage -> attachments -> Configuration, and add "application/pdf", "application/msword", etc. to Allowed MIME types.`);
+          }
+          throw uploadError;
         }
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("attachments").getPublicUrl(fileName);
+        uploadedUrls.push(publicUrl);
       }
 
       const { data: complaintData, error: insertError } = await supabase
@@ -434,7 +457,7 @@ const Home = () => {
           category: category,
           description: complaint,
           is_anonymous: personalDetails.isAnonymous || !personalDetails.name,
-          attachment_url: uploadedUrls[0] || null,
+          attachment_url: uploadedUrls.length > 0 ? uploadedUrls.join(',') : null,
           status: "submitted",
           user_id: user?.id || null, // Track which logged-in user created this
         })
@@ -594,22 +617,32 @@ const Home = () => {
                   {/* Image previews */}
                   {images.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/20">
-                      {images.map((img, index) => (
-                        <div key={index} className="relative">
-                          <img
-                            src={URL.createObjectURL(img)}
-                            alt={`Upload ${index + 1}`}
-                            className="w-16 h-16 object-cover rounded-lg"
-                          />
+                      {images.map((img, index) => {
+                        const isImage = img.type.startsWith("image/");
+                        return (
+                        <div key={index} className="relative group">
+                          {isImage ? (
+                            <img
+                              src={URL.createObjectURL(img)}
+                              alt={`Upload ${index + 1}`}
+                              className="w-16 h-16 object-cover rounded-lg"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 bg-white/10 rounded-lg flex items-center justify-center flex-col p-1">
+                              <FileText size={20} className="text-white" />
+                              <span className="text-[10px] text-white mt-1 truncate w-14 text-center" title={img.name}>{img.name}</span>
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => removeImage(index)}
-                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center z-10"
                           >
                             <X size={12} className="text-white" />
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -659,14 +692,14 @@ const Home = () => {
                       {/* Image upload button */}
                       <label className="cursor-pointer p-2 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2">
                         <ImagePlus size={20} className="text-gold-400" />
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-400 whitespace-nowrap">
                           {images.length > 0
-                            ? `${images.length} image(s)`
-                            : "Add images (optional)"}
+                            ? `${images.length} file(s)`
+                            : "Add attachments (optional)"}
                         </span>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept=".pdf,.doc,.docx,image/jpeg,image/png,image/gif,image/webp,image/*"
                           multiple
                           onChange={handleImageUpload}
                           className="hidden"
@@ -696,8 +729,8 @@ const Home = () => {
                 </div>
 
                 <p className="text-sm text-gray-400 mt-3">
-                  Select a category and click send to submit (images are
-                  optional)
+                  Select a category and click send to submit (attachments are
+                  optional, 5MB max total)
                 </p>
               </form>
             }
