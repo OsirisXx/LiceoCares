@@ -38,8 +38,11 @@ export default async function handler(req, res) {
         // Initialize Resend with API key
         const resend = new Resend(apiKey);
 
+        // Use environment variable for sender, fallback to default
+        const fromEmail = process.env.RESEND_FROM || "Liceo Cares <noreply@raijintech.dev>";
+        
         const { data, error } = await resend.emails.send({
-            from: "Liceo Cares <noreply@citattendance.info>",
+            from: fromEmail,
             to: Array.isArray(to) ? to : [to],
             subject,
             html,

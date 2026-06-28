@@ -2,7 +2,7 @@
 // Uses Resend API to send email notifications
 
 const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
-const FROM_EMAIL = "Liceo Cares <noreply@citattendance.info>";
+const FROM_EMAIL = "Liceo Cares <noreply@raijintech.dev>";
 
 // Liceo de Cagayan University Colors
 const COLORS = {
