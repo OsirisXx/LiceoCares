@@ -1,62 +1,24 @@
-// Local development server for email API
-// Run with: node server/dev-server.js
+/* global process */
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import { queueEmail } from "./email-sender.js";
 
-import express from 'express';
-import cors from 'cors';
-import { Resend } from 'resend';
-import dotenv from 'dotenv';
-
-// Load environment variables
 dotenv.config();
-
 const app = express();
-const PORT = 3001;
-
-// Middleware
-app.use(cors());
+app.use(cors({ origin: process.env.DEV_APP_ORIGIN || "http://localhost:5173" }));
 app.use(express.json());
 
-// Email endpoint
-app.post('/api/send-email', async (req, res) => {
-    const apiKey = process.env.VITE_RESEND_API_KEY || process.env.RESEND_API_KEY;
-    
-    if (!apiKey) {
-        console.error('RESEND_API_KEY not configured');
-        return res.status(500).json({ 
-            error: 'Email service not configured. RESEND_API_KEY is missing.' 
-        });
-    }
-
-    try {
-        const { to, subject, html } = req.body;
-
-        if (!to || !subject || !html) {
-            return res.status(400).json({ error: 'Missing required fields: to, subject, html' });
-        }
-
-        const resend = new Resend(apiKey);
-
-        const { data, error } = await resend.emails.send({
-            from: 'Liceo Cares <noreply@citattendance.info>',
-            to: Array.isArray(to) ? to : [to],
-            subject,
-            html,
-        });
-
-        if (error) {
-            console.error('Resend API error:', error);
-            return res.status(500).json({ error: error.message || 'Failed to send email' });
-        }
-
-        console.log('Email sent successfully:', data.id);
-        return res.status(200).json({ success: true, id: data.id });
-    } catch (error) {
-        console.error('Error sending email:', error);
-        return res.status(500).json({ error: error.message || 'Unknown error occurred' });
-    }
+app.post("/api/send-email", async (req, res) => {
+  try {
+    const { to, subject, html } = req.body || {};
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (typeof to !== "string" || typeof subject !== "string" || typeof html !== "string" || !idempotencyKey) return res.status(400).json({ error: "Invalid email request." });
+    const queued = await queueEmail({ to, subject, html, idempotencyKey, tags: { app: "liceo-cares", event: "ticket-confirmation", environment: "development" } });
+    return res.status(202).json({ success: true, id: queued.id, status: queued.status });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Unable to queue email." });
+  }
 });
 
-app.listen(PORT, () => {
-    console.log(`📧 Dev email server running at http://localhost:${PORT}`);
-    console.log(`   POST /api/send-email to send emails`);
-});
+app.listen(3001, () => console.log("Email queue adapter listening on http://localhost:3001"));

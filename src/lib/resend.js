@@ -1,8 +1,6 @@
-// Resend Email Service for Liceo Cares Ticketing System
-// Uses Resend API to send email notifications
+import { supabase } from "./supabase";
 
-const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
-const FROM_EMAIL = "Liceo Cares <noreply@raijintech.dev>";
+// Liceo Cares notification templates. Delivery is queued through the server-only EmailSender adapter.
 
 // Liceo de Cagayan University Colors
 const COLORS = {
@@ -96,53 +94,36 @@ const ticketReferenceBox = (referenceNumber) => `
 `;
 
 /**
- * Send email - uses /api/send-email endpoint
- * In development: Vite proxies to local dev server (localhost:3001)
- * In production: Vercel serverless function handles the request
+ * Queue a transactional email through the same-origin server adapter.
+ * The central EmailSender project key remains server-side; the signed-in user
+ * can queue confirmations only for their own email address.
  */
 export const sendEmail = async ({ to, subject, html }) => {
-  if (!to) {
-    console.log("No recipient email provided, skipping email notification");
-    return { success: false, error: "No recipient email" };
-  }
+  if (!to) return { success: false, error: "No recipient email" };
 
+  const referenceNumber = subject.match(/\bLDCU-[A-Z0-9]+-[A-Z0-9]+\b/i)?.[0]?.toUpperCase();
+  if (!referenceNumber) return { success: false, error: "A ticket reference number is required" };
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.access_token) return { success: false, error: "Sign in is required to queue email" };
+
+  const idempotencyKey = `liceo-cares:${referenceNumber}:${subject}`.slice(0, 160);
   try {
     const response = await fetch("/api/send-email", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${session.access_token}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
       },
-      body: JSON.stringify({
-        to,
-        subject,
-        html,
-      }),
+      body: JSON.stringify({ to, subject, html, referenceNumber }),
     });
-
-    // Check if response has content before parsing JSON
-    const text = await response.text();
-    if (!text) {
-      console.error("Empty response from email API");
-      return { success: false, error: "Empty response from server" };
-    }
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (parseError) {
-      console.error("Failed to parse response:", text);
-      return { success: false, error: "Invalid response from server" };
-    }
-
-    if (!response.ok) {
-      console.error("Email API error:", data);
-      return { success: false, error: data.error || "Failed to send email" };
-    }
-
-    console.log("Email sent successfully:", data.id);
-    return { success: true, id: data.id };
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { success: false, error: data.error || "Failed to queue email" };
+    console.log("Email queued successfully:", data.id);
+    return { success: true, id: data.id, status: data.status };
   } catch (error) {
-    console.error("Error sending email:", error);
+    console.error("Error queueing email:", error);
     return { success: false, error: error.message };
   }
 };

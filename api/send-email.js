@@ -1,62 +1,30 @@
-// Vercel Serverless Function to send emails via Resend SDK
+/* global process */
+import { queueEmail } from "../server/email-sender.js";
 
-import { Resend } from "resend";
+const fail = (status, message) => Object.assign(new Error(message), { status });
+const appUrl = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+const anonKey = () => process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+async function authenticatedUser(req) {
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith("Bearer ")) throw fail(401, "Sign in is required to queue email.");
+  const response = await fetch(`${appUrl()}/auth/v1/user`, { headers: { apikey: anonKey(), Authorization: authorization } });
+  if (!response.ok) throw fail(401, "Your session is no longer valid.");
+  return response.json();
+}
 
 export default async function handler(req, res) {
-    // Set CORS headers
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-    // Handle preflight
-    if (req.method === "OPTIONS") {
-        return res.status(200).end();
-    }
-
-    // Only allow POST requests
-    if (req.method !== "POST") {
-        return res.status(405).json({ error: "Method not allowed" });
-    }
-
-    const apiKey = process.env.RESEND_API_KEY;
-    
-    if (!apiKey) {
-        console.error("RESEND_API_KEY not configured");
-        return res.status(500).json({ 
-            error: "Email service not configured. RESEND_API_KEY is missing.",
-            debug: "Please add RESEND_API_KEY to your Vercel environment variables"
-        });
-    }
-
-    try {
-        const { to, subject, html } = req.body;
-
-        if (!to || !subject || !html) {
-            return res.status(400).json({ error: "Missing required fields: to, subject, html" });
-        }
-
-        // Initialize Resend with API key
-        const resend = new Resend(apiKey);
-
-        // Use environment variable for sender, fallback to default
-        const fromEmail = process.env.RESEND_FROM || "Liceo Cares <noreply@raijintech.dev>";
-        
-        const { data, error } = await resend.emails.send({
-            from: fromEmail,
-            to: Array.isArray(to) ? to : [to],
-            subject,
-            html,
-        });
-
-        if (error) {
-            console.error("Resend API error:", error);
-            return res.status(500).json({ error: error.message || "Failed to send email" });
-        }
-
-        console.log("Email sent successfully:", data.id);
-        return res.status(200).json({ success: true, id: data.id });
-    } catch (error) {
-        console.error("Error sending email:", error);
-        return res.status(500).json({ error: error.message || "Unknown error occurred" });
-    }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  try {
+    const { to, subject, html } = req.body || {};
+    const idempotencyKey = req.headers["idempotency-key"];
+    if (!appUrl() || !anonKey()) throw fail(500, "Supabase server configuration is missing.");
+    if (typeof to !== "string" || typeof subject !== "string" || typeof html !== "string" || !idempotencyKey || idempotencyKey.length > 160) throw fail(400, "Invalid email request.");
+    const user = await authenticatedUser(req);
+    if (!user.email || user.email.toLowerCase() !== to.toLowerCase()) throw fail(403, "Confirmation emails can only be sent to your signed-in email address.");
+    const queued = await queueEmail({ to, subject, html, idempotencyKey, tags: { app: "liceo-cares", event: "ticket-confirmation" } });
+    return res.status(202).json({ success: true, id: queued.id, status: queued.status });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Unable to queue email." });
+  }
 }
