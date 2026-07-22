@@ -12,27 +12,25 @@ const securityHeadersPlugin = () => ({
         res.end('Forbidden');
         return;
       }
-      
-      res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src 'self' https://localhost:* wss://localhost:* http://localhost:* ws://localhost:*; frame-ancestors 'none';");
+      res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src 'self' https://localhost:* wss://localhost:* http://localhost:* ws://localhost:* https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none';");
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-      
       next();
     });
   }
 });
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), basicSsl(), securityHeadersPlugin()],
   server: {
+    host: 'localhost',
+    port: 5174,
+    strictPort: true,
+    hmr: { protocol: 'wss', host: 'localhost', clientPort: 5174 },
     proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
+      '/api': { target: 'http://localhost:3001', changeOrigin: true },
     },
   },
 })

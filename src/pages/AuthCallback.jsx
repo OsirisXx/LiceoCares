@@ -1,81 +1,119 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { AlertCircle, ShieldAlert } from "lucide-react";
 
+const CALLBACK_TIMEOUT_MS = 8000;
+
 const AuthCallback = () => {
   const navigate = useNavigate();
   const [error, setError] = useState("");
-  const [wrongRole, setWrongRole] = useState(null); // stores the formatted role name
-  const hasRun = useRef(false); // prevent double-execution
+  const [wrongRole, setWrongRole] = useState(null);
+  const processedUserId = useRef(null);
 
   useEffect(() => {
-    const handleAuthCallback = async () => {
-      if (hasRun.current) return;
-      hasRun.current = true;
+    let isMounted = true;
+    let subscription;
+    let timeoutId;
 
-      try {
-        // Wait briefly for the session to be established after the OAuth redirect
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          setError(sessionError.message);
-          return;
-        }
-
-        if (!session?.user) {
-          // No session yet — listen for SIGNED_IN event
-          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-            if (event === "SIGNED_IN" && newSession?.user) {
-              subscription.unsubscribe();
-              await processSession(newSession);
-            }
-          });
-          return;
-        }
-
-        await processSession(session);
-      } catch (err) {
-        console.error("Auth callback error:", err);
-        setError("An error occurred during authentication. Please try again.");
-      }
+    const showError = (message) => {
+      if (isMounted) setError(message);
     };
 
     const processSession = async (session) => {
-      const email = session.user.email || "";
+      if (!session?.user || processedUserId.current === session.user.id) return;
+      processedUserId.current = session.user.id;
 
-      // Verify email domain
-      if (!email.endsWith("@liceo.edu.ph")) {
+      const email = (session.user.email || "").toLowerCase();
+      const provider = session.user.app_metadata?.provider;
+
+      if (!email.endsWith("@liceo.edu.ph") || provider !== "google") {
         await supabase.auth.signOut();
-        setError("Only Liceo de Cagayan University students (@liceo.edu.ph) can sign in.");
+        showError("Only Liceo de Cagayan University students using Google sign-in can access this portal.");
         return;
       }
 
-      // Check if this account belongs to a staff/admin user (exists in the 'users' table)
       const { data: userData, error: roleError } = await supabase
         .from("users")
         .select("role")
         .eq("id", session.user.id)
-        .maybeSingle(); // maybeSingle() returns null instead of error when no rows found
+        .maybeSingle();
 
-      console.log("Role check:", { userData, roleError });
-
-      if (userData && userData.role && userData.role !== 'student') {
-        // This is a staff/admin account — block and sign out
-        const formatRole = (role) =>
-          role.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-
-        await supabase.auth.signOut();
-        setWrongRole(formatRole(userData.role));
+      if (roleError) {
+        showError("We could not verify your account permissions. Please try again or contact support.");
         return;
       }
 
-      // It's a valid student — proceed
-      navigate("/my-tickets", { replace: true });
+      if (userData?.role && userData.role !== "student") {
+        const formattedRole = userData.role
+          .split("_")
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" ");
+
+        await supabase.auth.signOut();
+        if (isMounted) setWrongRole(formattedRole);
+        return;
+      }
+
+      if (isMounted) navigate("/my-tickets", { replace: true });
     };
 
-    handleAuthCallback();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const resolveSession = async () => {
+      const callbackParams = new URLSearchParams(window.location.search);
+      const callbackError = callbackParams.get("error");
+      if (callbackError) {
+        const callbackErrorCode = callbackParams.get("error_code");
+        const callbackErrorDescription = callbackParams.get("error_description");
+        const details = [callbackError, callbackErrorCode, callbackErrorDescription]
+          .filter(Boolean)
+          .join(": ")
+          .slice(0, 300);
+
+        showError(
+          import.meta.env.DEV && details
+            ? `Google sign-in failed (${details}).`
+            : "Google sign-in was not completed. Please return to login and try again."
+        );
+        return;
+      }
+
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          showError("We could not complete your sign-in. Please try again.");
+          return;
+        }
+
+        if (session?.user) {
+          await processSession(session);
+          return;
+        }
+
+        const authState = supabase.auth.onAuthStateChange((event, newSession) => {
+          if (event === "SIGNED_IN" && newSession?.user) {
+            window.clearTimeout(timeoutId);
+            subscription?.unsubscribe();
+            processSession(newSession);
+          }
+        });
+        subscription = authState.data.subscription;
+        timeoutId = window.setTimeout(() => {
+          subscription?.unsubscribe();
+          showError("Sign-in timed out. Please return to login and try again.");
+        }, CALLBACK_TIMEOUT_MS);
+      } catch {
+        showError("An error occurred during authentication. Please try again.");
+      }
+    };
+
+    resolveSession();
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(timeoutId);
+      subscription?.unsubscribe();
+    };
+  }, [navigate]);
 
   // Wrong role error screen
   if (wrongRole) {

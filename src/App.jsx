@@ -10,6 +10,7 @@ import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import StudentLogin from "./pages/StudentLogin";
 import AuthCallback from "./pages/AuthCallback";
 import MyTickets from "./pages/MyTickets";
+import TermsOfService from "./pages/TermsOfService";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/terms" element={<TermsOfService />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/student-login" element={<StudentLogin />} />
             <Route path="/auth/callback" element={<AuthCallback />} />

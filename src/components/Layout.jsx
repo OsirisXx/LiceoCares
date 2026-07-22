@@ -33,6 +33,7 @@ const Layout = ({ children }) => {
   };
 
   const isActive = (path) => location.pathname === path;
+  const isStudentTicketWorkspace = isStudent && location.pathname === "/my-tickets";
 
   const publicLinks = (user && !isStudent)
     ? []
@@ -187,7 +188,7 @@ const Layout = ({ children }) => {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="bg-maroon-800 text-white shadow-lg sticky top-0 z-50">
+      <header className={`${isStudentTicketWorkspace ? "hidden " : ""}bg-maroon-800 text-white shadow-lg sticky top-0 z-50`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo - always on left */}
@@ -520,7 +521,7 @@ const Layout = ({ children }) => {
       <main className="flex-1">{children}</main>
 
       {/* Footer */}
-      <footer className="bg-maroon-900 text-white py-6">
+      <footer className={`${isStudentTicketWorkspace ? "hidden " : ""}bg-maroon-900 text-white py-6`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
             <div className="flex items-center space-x-3">
@@ -534,8 +535,11 @@ const Layout = ({ children }) => {
                 </p>
               </div>
             </div>
-            <div className="text-sm text-gray-400">
-              © {new Date().getFullYear()} Liceo Cares. All rights reserved.
+            <div className="flex items-center gap-4 text-sm text-gray-400">
+              <Link to="/terms" className="hover:text-gold-300 transition-colors">
+                Terms of Service
+              </Link>
+              <span>© {new Date().getFullYear()} Liceo Cares. All rights reserved.</span>
             </div>
           </div>
         </div>
