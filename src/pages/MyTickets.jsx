@@ -1,5 +1,5 @@
 import { createElement, useState, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import {
@@ -55,6 +55,7 @@ const renderIcon = (Icon, size) => createElement(Icon, { size });
 
 const MyTickets = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isStudent, studentProfile, loading: authLoading, signOut } = useAuth();
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -169,7 +170,7 @@ const MyTickets = () => {
             to={to}
             onClick={closeMobileMenu}
             className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition-colors ${
-              to === "/my-tickets" ? "bg-gold-500 font-semibold text-maroon-800" : "text-white hover:bg-maroon-700"
+              location.pathname === to ? "bg-gold-500 font-semibold text-maroon-800" : "text-white hover:bg-maroon-700"
             }`}
           >
             {renderIcon(Icon, 19)}

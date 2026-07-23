@@ -33,7 +33,11 @@ const Layout = ({ children }) => {
   };
 
   const isActive = (path) => location.pathname === path;
-  const isStudentTicketWorkspace = isStudent && location.pathname === "/my-tickets";
+  const isStudentTicketWorkspace =
+    isStudent &&
+    (location.pathname === "/my-tickets" ||
+      location.pathname === "/track" ||
+      location.pathname.startsWith("/ticket/"));
 
   const publicLinks = (user && !isStudent)
     ? []

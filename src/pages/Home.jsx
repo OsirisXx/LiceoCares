@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 const Home = () => {
-  const { user, isStudent, studentProfile } = useAuth();
+  const { user, studentProfile } = useAuth();
   const [complaint, setComplaint] = useState("");
   const [category, setCategory] = useState("");
   const [images, setImages] = useState([]);
@@ -148,7 +148,9 @@ const Home = () => {
 
   const generateReferenceNumber = () => {
     const timestamp = Date.now().toString(36).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const random = Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("").toUpperCase();
     return `LDCU-${timestamp}-${random}`;
   };
 
@@ -445,9 +447,11 @@ const Home = () => {
         uploadedUrls.push(publicUrl);
       }
 
-      const { data: complaintData, error: insertError } = await supabase
+      const complaintId = crypto.randomUUID();
+      const { error: insertError } = await supabase
         .from("complaints")
         .insert({
+          id: complaintId,
           reference_number: refNumber,
           name: personalDetails.isAnonymous
             ? "Anonymous"
@@ -460,13 +464,11 @@ const Home = () => {
           attachment_url: uploadedUrls.length > 0 ? uploadedUrls.join(',') : null,
           status: "submitted",
           user_id: user?.id || null, // Track which logged-in user created this
-        })
-        .select("id")
-        .single();
+        });
 
       if (insertError) throw insertError;
 
-      await recordSubmission(ipAddress, complaintData?.id);
+      await recordSubmission(ipAddress, complaintId);
 
       // Send confirmation email immediately if user is logged in
       const userEmail = user?.email || studentProfile?.email;
@@ -935,22 +937,19 @@ const Home = () => {
                       onClick={async () => {
                         setDetailsLoading(true);
                         try {
-                          const { error: updateError } = await supabase
-                            .from("complaints")
-                            .update({
-                              name: personalDetails.isAnonymous
-                                ? "Anonymous"
-                                : personalDetails.name || "Anonymous",
-                              email: personalDetails.email || null,
-                              student_id: personalDetails.studentId || null,
-                              is_anonymous:
-                                personalDetails.isAnonymous ||
-                                !personalDetails.name,
-                            })
-                            .eq("reference_number", referenceNumber);
+                          const { error: updateError } = await supabase.rpc(
+                            "update_public_ticket_contact",
+                            {
+                              tracking_reference: referenceNumber,
+                              contact_name: personalDetails.name || "",
+                              contact_email: personalDetails.email || "",
+                              contact_student_id: personalDetails.studentId || "",
+                              submit_anonymously: personalDetails.isAnonymous,
+                            }
+                          );
                           if (!updateError) {
-                            // Send confirmation email if email was provided
-                            if (personalDetails.email) {
+                            // The email endpoint requires the authenticated ticket owner.
+                            if (user && personalDetails.email) {
                               await sendTicketConfirmationEmail({
                                 to: personalDetails.email,
                                 referenceNumber: referenceNumber,

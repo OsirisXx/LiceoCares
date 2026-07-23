@@ -5,6 +5,21 @@ import { AlertCircle, ShieldAlert } from "lucide-react";
 
 const CALLBACK_TIMEOUT_MS = 8000;
 
+const withTimeout = (promise, timeoutMessage) =>
+  new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), CALLBACK_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
+
 const AuthCallback = () => {
   const navigate = useNavigate();
   const [error, setError] = useState("");
@@ -33,11 +48,21 @@ const AuthCallback = () => {
         return;
       }
 
-      const { data: userData, error: roleError } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", session.user.id)
-        .maybeSingle();
+      let userData;
+      let roleError;
+      try {
+        ({ data: userData, error: roleError } = await withTimeout(
+          supabase
+            .from("users")
+            .select("role")
+            .eq("id", session.user.id)
+            .maybeSingle(),
+          "Account permission verification timed out. Please return to login and try again."
+        ));
+      } catch {
+        showError("Account permission verification timed out. Please return to login and try again.");
+        return;
+      }
 
       if (roleError) {
         showError("We could not verify your account permissions. Please try again or contact support.");
@@ -78,10 +103,27 @@ const AuthCallback = () => {
       }
 
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const { data: sessionData, error: sessionError } = await withTimeout(
+          supabase.auth.getSession(),
+          "Sign-in session recovery timed out. Please return to login and try again."
+        );
         if (sessionError) {
           showError("We could not complete your sign-in. Please try again.");
           return;
+        }
+
+        let session = sessionData.session;
+        const authorizationCode = callbackParams.get("code");
+        if (!session && authorizationCode) {
+          const { data: exchangeData, error: exchangeError } = await withTimeout(
+            supabase.auth.exchangeCodeForSession(authorizationCode),
+            "Sign-in session recovery timed out. Please return to login and try again."
+          );
+          if (exchangeError || !exchangeData.session) {
+            showError("We could not complete your Google sign-in. Please return to login and try again.");
+            return;
+          }
+          session = exchangeData.session;
         }
 
         if (session?.user) {

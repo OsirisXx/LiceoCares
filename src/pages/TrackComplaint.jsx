@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../contexts/AuthContext";
+import StudentWorkspace from "../components/StudentWorkspace";
 import {
   Search,
   Clock,
@@ -25,6 +27,7 @@ import {
 } from "lucide-react";
 
 const TrackComplaint = () => {
+  const { isStudent } = useAuth();
   const { referenceNumber: urlRefNumber } = useParams();
   const [searchParams] = useSearchParams();
   const queryRefNumber = searchParams.get("ref");
@@ -102,6 +105,27 @@ const TrackComplaint = () => {
     },
   };
 
+  const loadTicket = async (ref) => {
+    const normalizedReference = ref.trim().toUpperCase();
+    const { data, error: fetchError } = await supabase.rpc("get_public_ticket", {
+      tracking_reference: normalizedReference,
+    });
+
+    if (fetchError) throw fetchError;
+    if (!data?.complaint) {
+      setComplaint(null);
+      setAuditTrail([]);
+      setComments([]);
+      setError("No feedback found with this reference number.");
+      return false;
+    }
+
+    setComplaint(data.complaint);
+    setAuditTrail(data.auditTrail || []);
+    setComments(data.comments || []);
+    return true;
+  };
+
   // Search with a provided reference number (for URL parameter loading)
   const handleSearchWithRef = async (ref) => {
     setError("");
@@ -111,45 +135,7 @@ const TrackComplaint = () => {
     setSearched(true);
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from("complaints")
-        .select("*")
-        .eq("reference_number", ref.toUpperCase())
-        .single();
-
-      if (fetchError) {
-        if (fetchError.code === "PGRST116") {
-          setError("No feedback found with this reference number.");
-        } else {
-          throw fetchError;
-        }
-        setLoading(false);
-        return;
-      }
-
-      setComplaint(data);
-
-      const { data: trailData } = await supabase
-        .from("audit_trail")
-        .select("*")
-        .eq("complaint_id", data.id)
-        .order("created_at", { ascending: true });
-
-      if (trailData) {
-        setAuditTrail(trailData);
-      }
-
-      // Fetch comments (only non-internal ones for complainants)
-      const { data: commentsData } = await supabase
-        .from("ticket_comments")
-        .select("*")
-        .eq("complaint_id", data.id)
-        .eq("is_internal", false)
-        .order("created_at", { ascending: true });
-
-      if (commentsData) {
-        setComments(commentsData);
-      }
+      await loadTicket(ref);
     } catch (err) {
       setError(err.message || "Failed to fetch feedback. Please try again.");
     } finally {
@@ -166,45 +152,7 @@ const TrackComplaint = () => {
     setSearched(true);
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from("complaints")
-        .select("*")
-        .eq("reference_number", referenceNumber.toUpperCase())
-        .single();
-
-      if (fetchError) {
-        if (fetchError.code === "PGRST116") {
-          setError("No feedback found with this reference number.");
-        } else {
-          throw fetchError;
-        }
-        setLoading(false);
-        return;
-      }
-
-      setComplaint(data);
-
-      const { data: trailData } = await supabase
-        .from("audit_trail")
-        .select("*")
-        .eq("complaint_id", data.id)
-        .order("created_at", { ascending: true });
-
-      if (trailData) {
-        setAuditTrail(trailData);
-      }
-
-      // Fetch comments (only non-internal ones for complainants)
-      const { data: commentsData } = await supabase
-        .from("ticket_comments")
-        .select("*")
-        .eq("complaint_id", data.id)
-        .eq("is_internal", false)
-        .order("created_at", { ascending: true });
-
-      if (commentsData) {
-        setComments(commentsData);
-      }
+      await loadTicket(referenceNumber);
     } catch (err) {
       setError(err.message || "Failed to fetch feedback. Please try again.");
     } finally {
@@ -236,38 +184,19 @@ const TrackComplaint = () => {
     return getRemainingDays(resolvedAt) > 0;
   };
 
-  const fetchComments = async (complaintId) => {
-    const { data: commentsData } = await supabase
-      .from("ticket_comments")
-      .select("*")
-      .eq("complaint_id", complaintId)
-      .eq("is_internal", false)
-      .order("created_at", { ascending: true });
-
-    if (commentsData) {
-      setComments(commentsData);
-    }
-  };
-
   const handlePostComment = async () => {
     if (!newComment.trim() || !complaint) return;
 
     setCommentLoading(true);
     try {
-      const { error: insertError } = await supabase
-        .from("ticket_comments")
-        .insert({
-          complaint_id: complaint.id,
-          content: newComment.trim(),
-          author_name: complaint.name || "Anonymous",
-          author_type: "complainant",
-          is_internal: false,
-        });
-
+      const { error: insertError } = await supabase.rpc("post_public_ticket_comment", {
+        tracking_reference: complaint.reference_number,
+        comment_content: newComment.trim(),
+      });
       if (insertError) throw insertError;
 
       setNewComment("");
-      await fetchComments(complaint.id);
+      await loadTicket(complaint.reference_number);
     } catch (err) {
       setError(err.message || "Failed to post comment");
     } finally {
@@ -405,8 +334,8 @@ const TrackComplaint = () => {
     );
   };
 
-  return (
-    <div className="min-h-[calc(100vh-200px)] py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
+  const content = (
+    <div className="min-h-[calc(100vh-200px)] bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
@@ -617,7 +546,7 @@ const TrackComplaint = () => {
             </div>
 
 {/* Verification Actions - Show when resolved and within 7 days */}
-            {complaint.status === "resolved" && isWithinVerificationWindow(complaint.resolved_at) && (
+            {complaint.status === "resolved" && complaint.can_manage && isWithinVerificationWindow(complaint.resolved_at) && (
               <div className="bg-white rounded-2xl shadow-xl p-6 border border-green-200">
                 <div className="flex items-center space-x-2 mb-4">
                   <Timer size={20} className="text-green-600" />
@@ -870,6 +799,8 @@ const TrackComplaint = () => {
       </div>
     </div>
   );
+
+  return isStudent ? <StudentWorkspace>{content}</StudentWorkspace> : content;
 };
 
 export default TrackComplaint;
